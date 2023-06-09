@@ -1,5 +1,6 @@
 use clap::Parser;
 use core::time;
+use std::thread::JoinHandle;
 use notify_rust::{Notification, NotificationHandle, Urgency};
 use std::error::Error;
 use std::io;
@@ -11,7 +12,7 @@ use std::{env, fs, thread};
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long)]
-    pid: u32,
+    pid: Vec<u32>,
 }
 
 /// Returns the process name as it appears from the command line arguments (i.e.
@@ -94,7 +95,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(i) = cmd_start {
         subprocess(&raw_args[(i + 1)..].to_vec())?;
     } else {
-        wait_on_process(Args::parse().pid).expect("Failed to wait on process");
+        let args = Args::parse();
+        let thread_handles: Vec<JoinHandle<()>> = args.pid.into_iter().map(|pid| {
+            thread::spawn(move || {
+                wait_on_process(pid).expect("Failed to wait on process");
+            })
+        }).collect();
+        thread_handles.into_iter().for_each(|thread_handle| {
+            let join_result = thread_handle.join();
+            match join_result {
+                Ok(()) => println!("Joined thread: process exited."),
+                Err(..) => println!("Failed to join thread")
+            };
+        });
     }
     Ok(())
 }
